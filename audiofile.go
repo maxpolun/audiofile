@@ -1,23 +1,34 @@
 package audiofile
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
 type AudioReader interface {
 	Load(io.Reader) error
+	GetData() []byte
 }
 type AudioWriter interface {
 	Save(io.Writer) error
 	Init() // set up the initial headers, etc.
+	SetData([]byte)
 }
 type AudioFile interface {
 	AudioReader
 	AudioWriter
 }
+
+const (
+	MIN_8_BIT  = 0
+	MID_8_BIT  = 128
+	MAX_8_BIT  = 255
+	MIN_16_BIT = -0x8000
+	MID_16_BIT = 0
+	MAX_16_BIT = 0x7fff
+)
 
 type waveheader struct {
 	// wave structure from https://ccrma.stanford.edu/courses/422/projects/WaveFormat/
@@ -84,6 +95,9 @@ func (w *Wavefile) Load(r io.Reader) error {
 	if err := binary.Read(r, binary.LittleEndian, &w.header.subchunk2Size); err != nil {
 		return BadFile
 	}
+	w.Data = make([]byte, w.header.subchunk2Size)
+	binary.Read(r, binary.LittleEndian, &w.Data)
+
 	return validate(w.header)
 }
 func validate(h waveheader) error {
@@ -102,24 +116,51 @@ func validate(h waveheader) error {
 	return nil
 }
 
-func (w *Wavefile) Save(r io.Writer) error {
-	return errors.New("Not Implemented")
+func (w *Wavefile) Save(writer io.Writer) error {
+	if err := binary.Write(writer, binary.BigEndian, w.header.chunkID); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.chunkSize); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.BigEndian, w.header.format); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.BigEndian, w.header.subchunk1ID); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.subchunk1Size); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.audioFormat); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.numChannels); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.sampleRate); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.byteRate); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.blockAlign); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.bitsPerSample); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.BigEndian, w.header.subchunk2ID); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.header.subchunk2Size); err != nil {
+		return err
+	}
+	if err := binary.Write(writer, binary.LittleEndian, w.Data); err != nil {
+		return err
+	}
+	return nil
 }
-
-var validWave *bytes.Buffer = bytes.NewBuffer([]byte{
-	'R', 'I', 'F', 'F', //4 ChunkID
-	36, 0, 0, 0, //8 ChunkSize
-	'W', 'A', 'V', 'E', //12 Format
-	'f', 'm', 't', ' ', //16 Subchunk1ID
-	16, 0, 0, 0, //20 Subchunk1Size
-	1, 0, //22 AudioFormat
-	1, 0, //24 NumChannels
-	0x44, 0xAC, 0, 0, //28 SampleRate 44100 
-	0x88, 0x58, 0x01, 0, //32 ByteRate 
-	2, 0, // 34 block Align
-	16, 0, // 36 BitsPerSample
-	'd', 'a', 't', 'a', // 40 Subchunk2ID
-	0, 0, 0, 0}) //44 Subchunk 2 Size
 
 func (w *Wavefile) Init() {
 	w.header.chunkID = [4]byte{'R', 'I', 'F', 'F'}
@@ -135,4 +176,37 @@ func (w *Wavefile) Init() {
 	w.header.bitsPerSample = 16
 	w.header.subchunk2ID = [4]byte{'d', 'a', 't', 'a'}
 	w.header.subchunk2Size = 0
+}
+func (w *Wavefile) GetData() []byte {
+	return w.Data
+}
+func (w *Wavefile) SetData(b []byte) {
+	w.Data = b
+	w.header.subchunk2Size = uint32(len(b))
+}
+func BytesToSigned16(high, low byte) (out int16) {
+	if high == 128 && low == 0 {
+		return MIN_16_BIT
+	}
+	highi16 := int16(high & 127)
+	highshifted := highi16 << 8
+	out = highshifted + int16(low)
+
+	if neg := high & 128; neg != 0 {
+		out *= -1
+	}
+
+	return out
+}
+func Signed16ToBytes(in int16) (high, low byte) {
+	if in < 0 {
+		in = (^in) + 1
+		low = byte(in)
+		high = byte(in >> 8)
+		high |= 128
+	} else {
+		low = byte(in)
+		high = byte(in >> 8)
+	}
+	return high, low
 }
