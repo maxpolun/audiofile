@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+/******* WAVE FILES *******/
 var validWaveBuf []byte = []byte{
 	'R', 'I', 'F', 'F', //4 ChunkID
 	36, 0, 0, 0, //8 ChunkSize
@@ -19,8 +20,6 @@ var validWaveBuf []byte = []byte{
 	16, 0, // 36 BitsPerSample
 	'd', 'a', 't', 'a', // 40 Subchunk2ID
 	0, 0, 0, 0} //44 Subchunk 2 Size
-
-var validWave *bytes.Buffer = bytes.NewBuffer(validWaveBuf)
 
 func Test_WavefileShouldBeAbleToBeUsedAsAnAudiofile(t *testing.T) {
 	// This test is mostly a static assertion
@@ -43,7 +42,7 @@ func Test_EmptyReaderShouldReturnAnError(t *testing.T) {
 
 func Test_ValidWaveHeaderShouldNotReturnAnError(t *testing.T) {
 	af := &Wavefile{}
-	err := af.Load(validWave)
+	err := af.Load(bytes.NewBuffer(validWaveBuf))
 	if err != nil {
 		t.Errorf("expected no errors with valid wave header, got %v", err)
 	}
@@ -96,12 +95,12 @@ func Test_ShouldCheckForFileCorruption(t *testing.T) {
 func Test_InitShouldProduceAValidWave(t *testing.T) {
 	af := &Wavefile{}
 	af.Init()
-	if err := validate(af.header); err != nil {
+	if err := validate(af.Header); err != nil {
 		t.Errorf("Expected Init to produce a valid wavefile, got error %v", err)
-		t.Errorf("header has chunkID = %v, wave headerID = %v, wave subchunk1ID = %v, Wave  data chunk header = %v", af.header.chunkID, af.header.format, af.header.subchunk1ID, af.header.subchunk2ID)
+		t.Errorf("header has chunkID = %v, wave headerID = %v, wave subchunk1ID = %v, Wave  data chunk header = %v", af.Header.ChunkID, af.Header.Format, af.Header.Subchunk1ID, af.Header.Subchunk2ID)
 	}
 }
-func Test_GetDataShouldReturnTheBytesOfDataFromTheFile(t *testing.T) {
+func Test_GetBytesShouldReturnTheBytesOfDataFromTheFile(t *testing.T) {
 	newData := []byte{
 		0, 0,
 		127, 255, // aka 0111 1111 1111 1111 aka max 16bit integer
@@ -117,14 +116,14 @@ func Test_GetDataShouldReturnTheBytesOfDataFromTheFile(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no errors with valid wave file with data, got %v on file %v", err, newBuf)
 	}
-	data := af.GetData()
+	data := af.GetBytes()
 	if bytes.Compare(newData, data) != 0 {
-		t.Errorf("expected data returned from wavefile.GetData() to be the same as the input data.\n\nexpected %v, got %v",
+		t.Errorf("expected data returned from wavefile.GetBytes() to be the same as the input data.\n\nexpected %v, got %v",
 			newData, data)
-		t.Errorf("subchunk2Size = %v", af.header.subchunk2Size)
+		t.Errorf("subchunk2Size = %v", af.Header.Subchunk2Size)
 	}
 }
-func Test_SetDataShouldUpdateTheInternalBuffer(t *testing.T) {
+func Test_SetBytesShouldUpdateTheInternalBuffer(t *testing.T) {
 	newData := []byte{
 		0, 0,
 		127, 255, // aka 0111 1111 1111 1111 aka max 16bit integer
@@ -133,12 +132,12 @@ func Test_SetDataShouldUpdateTheInternalBuffer(t *testing.T) {
 		0, 0}
 	af := &Wavefile{}
 	af.Init()
-	af.SetData(newData)
+	af.SetBytes(newData)
 	if bytes.Compare(af.Data, newData) != 0 {
-		t.Errorf("expected to get %v, got %v in SetData()", newData, af.Data)
+		t.Errorf("expected to get %v, got %v in SetBytes()", newData, af.Data)
 	}
 }
-func Test_SetDataShouldUpdateTheSizeCount(t *testing.T) {
+func Test_SetBytesShouldUpdateTheSizeCount(t *testing.T) {
 	newData := []byte{
 		0, 0,
 		127, 255, // aka 0111 1111 1111 1111 aka max 16bit integer
@@ -147,12 +146,40 @@ func Test_SetDataShouldUpdateTheSizeCount(t *testing.T) {
 		0, 0}
 	af := &Wavefile{}
 	af.Init()
-	af.SetData(newData)
-	if af.header.subchunk2Size != uint32(len(newData)) {
-		t.Errorf("expected data length to be %v, found %v", len(newData), af.header.subchunk2Size)
+	af.SetBytes(newData)
+	if af.Header.Subchunk2Size != uint32(len(newData)) {
+		t.Errorf("expected data length to be %v, found %v", len(newData), af.Header.Subchunk2Size)
 	}
 }
 
+func Test_SaveShouldSucceed(t *testing.T) {
+	af := &Wavefile{}
+	af.Load(bytes.NewBuffer(validWaveBuf))
+	outbuf := make([]byte, 1024)
+	err := af.Save(bytes.NewBuffer(outbuf))
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
+func Test_SaveShouldGiveTheSameBytesAsInputPreviously(t *testing.T) {
+	af := &Wavefile{}
+	if err := af.Load(bytes.NewBuffer(validWaveBuf)); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	t.Logf("af = %v", af)
+	outbuf := bytes.NewBuffer(make([]byte, 0, 1024))
+	err := af.Save(outbuf)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	b := outbuf.Bytes()
+	if bytes.Compare(b, validWaveBuf) != 0 {
+		t.Errorf("expected %v (len %v), got %v (len %v)", validWaveBuf, len(validWaveBuf), b, len(b))
+	}
+}
+
+/******* UTIL FUNCTIONS *******/
 func Test_BytesToSigned16(t *testing.T) {
 	inputs := [][]byte{
 		{0, 0},
@@ -191,29 +218,5 @@ func Test_Signed16ToBytes(t *testing.T) {
 		}
 	}
 }
-func Test_SaveShouldNotHaveAnError(t *testing.T) {
-	af := &Wavefile{}
-	af.Load(bytes.NewBuffer(validWaveBuf))
-	outbuf := make([]byte, 1024)
-	err := af.Save(bytes.NewBuffer(outbuf))
-	if err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-}
 
-func Test_SaveShouldGiveTheSameBytesAsInputPreviously(t *testing.T) {
-	af := &Wavefile{}
-	if err := af.Load(bytes.NewBuffer(validWaveBuf)); err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-	t.Logf("af = %v", af)
-	outbuf := bytes.NewBuffer(make([]byte, 0, 1024))
-	err := af.Save(outbuf)
-	if err != nil {
-		t.Errorf("expected no error, got %v", err)
-	}
-	b := outbuf.Bytes()
-	if bytes.Compare(b, validWaveBuf) != 0 {
-		t.Errorf("expected %v (len %v), got %v (len %v)", validWaveBuf, len(validWaveBuf), b, len(b))
-	}
-}
+/******* AIFF FILES *******/
