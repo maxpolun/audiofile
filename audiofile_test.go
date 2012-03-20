@@ -179,14 +179,16 @@ func Test_SaveShouldGiveTheSameBytesAsInputPreviously(t *testing.T) {
 	}
 }
 
+/******* AIFF FILES *******/
+
 /******* UTIL FUNCTIONS *******/
 func Test_BytesToSigned16(t *testing.T) {
 	inputs := [][]byte{
 		{0, 0},
-		{127, 255},
-		{128, 0},
-		{0, 1},
-		{128, 1}}
+		{255, 127},
+		{0, 128},
+		{1, 0},
+		{1, 128}}
 	expected := []int16{
 		0,
 		MAX_16_BIT,
@@ -202,10 +204,10 @@ func Test_BytesToSigned16(t *testing.T) {
 func Test_Signed16ToBytes(t *testing.T) {
 	expected := [][]byte{
 		{0, 0},
-		{127, 255},
-		{128, 0},
-		{0, 1},
-		{128, 1}}
+		{255, 127},
+		{0, 128},
+		{1, 0},
+		{0, 128}}
 	inputs := []int16{
 		0,
 		MAX_16_BIT,
@@ -219,4 +221,59 @@ func Test_Signed16ToBytes(t *testing.T) {
 	}
 }
 
-/******* AIFF FILES *******/
+func comparei16(a, b []int16) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func Test_GetPCM(t *testing.T) {
+	byteData := [][]byte{
+		{0, 0},
+		{1, 0},
+		{0, 0, 0, 0},
+		{255, 127, 1, 0},
+		{0, 128, 0, 0}}
+	expected := [][]int16{
+		{0},
+		{1},
+		{0, 0},
+		{MAX_16_BIT, 1},
+		{MIN_16_BIT, 0}}
+	af := &Wavefile{}
+	af.Init()
+	for i := range expected {
+		af.SetBytes(byteData[i])
+		if intData := GetPCM(af); !comparei16(intData, expected[i]) {
+			t.Errorf("expected to get %v, got %v", expected[i], intData)
+		}
+	}
+}
+func Test_SetPCM(t *testing.T) {
+	expected := [][]byte{
+		{0, 0},
+		{1, 0},
+		{0, 0, 0, 0},
+		{255, 127, 1, 0},
+		{0, 128, 0, 0}}
+	intData := [][]int16{
+		{0},
+		{1},
+		{0, 0},
+		{MAX_16_BIT, 1},
+		{MIN_16_BIT, 0}}
+	af := &Wavefile{}
+	af.Init()
+	for i := range expected {
+		SetPCM(af, intData[i])
+		if byteData := af.GetBytes(); bytes.Compare(byteData, expected[i]) != 0 {
+			t.Errorf("expected to get %v, got %v", expected[i], byteData)
+		}
+	}
+}

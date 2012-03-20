@@ -185,15 +185,25 @@ func (w *Wavefile) SetBytes(b []byte) {
 	w.Header.Subchunk2Size = uint32(len(b))
 }
 
-func getPCM(areader AudioReader) []int16 {
-	//bytes := areader.GetBytes()
-	return nil
+func GetPCM(areader AudioReader) []int16 {
+	bytes := areader.GetBytes()
+	out := make([]int16, len(bytes)/2)
+	for i := range out {
+		out[i] = BytesToSigned16(bytes[i*2], bytes[i*2+1])
+	}
+	return out
 }
-func setPCM(awriter AudioWriter, pcm []int16) {
-
+func SetPCM(awriter AudioWriter, pcm []int16) {
+	bytes := make([]byte, len(pcm)*2)
+	for i := range pcm {
+		low, high := Signed16ToBytes(pcm[i])
+		bytes[i*2] = low
+		bytes[i*2+1] = high
+	}
+	awriter.SetBytes(bytes)
 }
 
-func BytesToSigned16(high, low byte) (out int16) {
+func BytesToSigned16(low, high byte) (out int16) {
 	if high == 128 && low == 0 {
 		return MIN_16_BIT
 	}
@@ -207,7 +217,10 @@ func BytesToSigned16(high, low byte) (out int16) {
 
 	return out
 }
-func Signed16ToBytes(in int16) (high, low byte) {
+func Signed16ToBytes(in int16) (low, high byte) {
+	if in == -1 {
+		return 0, 128
+	}
 	if in < 0 {
 		in = (^in) + 1
 		low = byte(in)
@@ -217,5 +230,5 @@ func Signed16ToBytes(in int16) (high, low byte) {
 		low = byte(in)
 		high = byte(in >> 8)
 	}
-	return high, low
+	return
 }
