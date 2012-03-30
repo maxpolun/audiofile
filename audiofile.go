@@ -1,3 +1,9 @@
+/*
+	Package audiofile is a pure Go generic audiofile library, it reads from a 
+	standard io.Reader and writes to an io.Writer
+
+	currently it supports wav files, with other lossless formats planned
+*/
 package audiofile
 
 import (
@@ -7,15 +13,34 @@ import (
 	"io"
 )
 
+// The AudioReader interface is a file that can be read -- it can't 
+// necessarily be written out in the case of a format like mp3 that
+// requires complex encoding
 type AudioReader interface {
+	// Load the audio file from an io.Reader It performs some basic 
+	// sanity checks and returns an error if there is either an io error
+	// or if the file appears to be corrupted
 	Load(io.Reader) error
+	// GetBytes gets the raw bytes of audio data from the audio file. It performs 
+	// no conversions and does not return any of the metadata
 	GetBytes() []byte
 }
+
+// The AudioWriter interface is an audiofle that can be written out
 type AudioWriter interface {
+	// Writes a valid audio file out to the given io.Writer. It 
+	// should only return an error if there is an io error
 	Save(io.Writer) error
-	Init() // set up the initial headers, etc.
+	// Init sets up the audio file metadata for the 
+	// audiofile with the default values
+	Init()
+	// SetBytes sets the audio data to the given raw bytes. Like 
+	// GetBytes, it performs no conversions.
 	SetBytes([]byte)
 }
+
+// The AudioFile interface is a file that can be read or written. Most of the 
+// supported file types should implement this interface
 type AudioFile interface {
 	AudioReader
 	AudioWriter
@@ -30,9 +55,9 @@ const (
 	MAX_16_BIT = 0x7fff
 )
 
+// wave structure from https://ccrma.stanford.edu/courses/422/projects/WaveFormat/
+// byte arrays for strings, uints for numbers 
 type Waveheader struct {
-	// wave structure from https://ccrma.stanford.edu/courses/422/projects/WaveFormat/
-	// byte arrays for strings, uints for numbers 
 	ChunkID       [4]byte // BigEndian
 	ChunkSize     uint32  // LittleEndian
 	Format        [4]byte // BigEndian
@@ -48,11 +73,13 @@ type Waveheader struct {
 	Subchunk2Size uint32  // LittleEndian
 }
 
+// Wavefile format -- *Wavefile implements AudioFile
 type Wavefile struct {
 	Header Waveheader
 	Data   []byte
 }
 
+// BadFile indicates that the audiofile is corrupt
 var BadFile = errors.New("File is corrupt or not the proper format")
 
 func (w *Wavefile) Load(r io.Reader) error {
@@ -185,6 +212,8 @@ func (w *Wavefile) SetBytes(b []byte) {
 	w.Header.Subchunk2Size = uint32(len(b))
 }
 
+// GetPCM is a utility function -- it calls GetBytes and interperets the data
+// as 16bit signed LPCM data
 func GetPCM(areader AudioReader) []int16 {
 	bytes := areader.GetBytes()
 	out := make([]int16, len(bytes)/2)
@@ -193,6 +222,9 @@ func GetPCM(areader AudioReader) []int16 {
 	}
 	return out
 }
+
+// SetPCM is a utility function -- it saves the given 16bit signed LPCM data
+// in the given AudioWriter
 func SetPCM(awriter AudioWriter, pcm []int16) {
 	bytes := make([]byte, len(pcm)*2)
 	for i := range pcm {
@@ -203,6 +235,7 @@ func SetPCM(awriter AudioWriter, pcm []int16) {
 	awriter.SetBytes(bytes)
 }
 
+// BytesToSigned16 is a bit by bit copy of 2 bytes into a signed 16bit value
 func BytesToSigned16(low, high byte) (out int16) {
 	if high == 128 && low == 0 {
 		return MIN_16_BIT
@@ -217,6 +250,8 @@ func BytesToSigned16(low, high byte) (out int16) {
 
 	return out
 }
+
+// Signed16ToBytes is a bit by bit copy of a signed 16bit int into 2 bytes
 func Signed16ToBytes(in int16) (low, high byte) {
 	if in == -1 {
 		return 0, 128
